@@ -4,7 +4,9 @@ My [Claude Code](https://code.claude.com) setup. Starts with the statusline; ski
 
 ## Statusline
 
-![statusline](statusline/screenshot.png)
+![statusline on Opus](statusline/statusline-opus.png)
+
+![statusline on Fable](statusline/statusline-fable.png)
 
 Two lines, always visible under the prompt:
 
