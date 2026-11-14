@@ -44,8 +44,16 @@ cache_creation=$(echo "$input" | jq -r '.context_window.current_usage.cache_crea
 total_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 
 # Rate limits
-five_h_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-five_h_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+# Max has a 5-hour window; Ultra has none, so fall back to the weekly window.
+# Picked by which data is present, so switching plans needs no config change.
+rl_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+rl_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+rl_label="5h"
+if [ -z "$rl_pct" ]; then
+    rl_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+    rl_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+    rl_label="wk"
+fi
 
 # Format tokens with k/M suffix
 fmt() {
@@ -133,35 +141,6 @@ else
     sec_model="${MAGENTA}${short_model}${RESET}"
 fi
 
-# 3. 5h session limit (8-char bar, color-coded)
-sec_5h=""
-if [ -n "$five_h_pct" ]; then
-    # Color based on usage: green <50, yellow 50-80, red >80
-    if [ "$(echo "$five_h_pct > 80" | bc)" -eq 1 ]; then
-        rl_color="$RED"
-    elif [ "$(echo "$five_h_pct > 50" | bc)" -eq 1 ]; then
-        rl_color="$YELLOW"
-    else
-        rl_color="$GREEN"
-    fi
-    bar=$(make_bar "$five_h_pct" "$rl_color")
-    sec_5h=$(printf "5h %s %.0f%%" "$bar" "$five_h_pct")
-    # Add time remaining if resets_at is available
-    if [ -n "$five_h_resets" ]; then
-        now=$(date +%s)
-        remaining=$((five_h_resets - now))
-        if [ "$remaining" -gt 0 ]; then
-            hrs=$((remaining / 3600))
-            mins=$(( (remaining % 3600) / 60 ))
-            if [ "$hrs" -gt 0 ]; then
-                sec_5h="${sec_5h} ${DIM}(${hrs}h${mins}m)${RESET}"
-            else
-                sec_5h="${sec_5h} ${DIM}(${mins}m)${RESET}"
-            fi
-        fi
-    fi
-fi
-
 # 4. Location
 if [ -n "$git_branch" ]; then
     sec_location=$(printf "${BLUE}%s${RESET} ${GREEN}(%s)${RESET}" "$folder" "$git_branch")
@@ -172,24 +151,23 @@ fi
 # 5. Usage line (second line): usg {5h bar} {pct}% | tokens ~cost
 total_cache=$((cache_read + cache_creation))
 total_tokens=$((total_input + total_output + total_cache))
-if [ -n "$five_h_pct" ]; then
-    usg_color=$(gradient_color "$five_h_pct")
-    usg_bar=$(make_bar "$five_h_pct" "$usg_color")
+if [ -n "$rl_pct" ]; then
+    usg_color=$(gradient_color "$rl_pct")
+    usg_bar=$(make_bar "$rl_pct" "$usg_color")
     usg_time=""
-    if [ -n "$five_h_resets" ]; then
-        now=$(date +%s)
-        remaining=$((five_h_resets - now))
+    if [ -n "$rl_resets" ]; then
+        remaining=$((rl_resets - $(date +%s)))
         if [ "$remaining" -gt 0 ]; then
-            hrs=$((remaining / 3600))
+            days=$((remaining / 86400))
+            hrs=$(( (remaining % 86400) / 3600 ))
             mins=$(( (remaining % 3600) / 60 ))
-            if [ "$hrs" -gt 0 ]; then
-                usg_time=$(printf " ${DIM}(${hrs}h${mins}m)${RESET}")
-            else
-                usg_time=$(printf " ${DIM}(${mins}m)${RESET}")
-            fi
+            if [ "$days" -gt 0 ]; then t="${days}d${hrs}h"
+            elif [ "$hrs" -gt 0 ]; then t="${hrs}h${mins}m"
+            else t="${mins}m"; fi
+            usg_time=" ${DIM}(${t})${RESET}"
         fi
     fi
-    sec_stats=$(printf "usg %s %.0f%%%s ${DIM}| %s tokens ~%s${RESET}" "$usg_bar" "$five_h_pct" "$usg_time" "$(fmt $total_tokens)" "$(fmt_cost $total_cost)")
+    sec_stats=$(printf "%s %s %.0f%%%s ${DIM}| %s tokens ~%s${RESET}" "$rl_label" "$usg_bar" "$rl_pct" "$usg_time" "$(fmt $total_tokens)" "$(fmt_cost $total_cost)")
 else
     sec_stats=$(printf "${DIM}usg %s tokens ~%s${RESET}" "$(fmt $total_tokens)" "$(fmt_cost $total_cost)")
 fi
