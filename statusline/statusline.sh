@@ -137,6 +137,9 @@ fi
 short_model=$(echo "$model" | sed -E 's/^Claude //; s/\(//; s/ context\)//; s/\)$//')
 if [[ "$model" == *[Ff]able* ]]; then
     sec_model="${BG_MODEL}${FG_MODEL} ${short_model} ${RESET}"
+elif [[ "$model" == *[Hh]aiku* ]]; then
+    # Bold red warning plate: Haiku in the main session is almost always an accident.
+    sec_model=$'\033[48;2;200;30;30m\033[38;2;255;255;255m'"${BOLD} ⚠ ${short_model} ${RESET}"
 else
     sec_model="${MAGENTA}${short_model}${RESET}"
 fi
